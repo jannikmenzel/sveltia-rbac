@@ -1,0 +1,42 @@
+backend:
+    name: gitlab
+    repo: your-namespace/your-project
+    branch: main
+
+    base_url: https://gitlab.example.com
+    api_root: https://gitlab.example.com/api/v4
+
+    auth_type: pkce
+    app_id: YOUR_GITLAB_OAUTH_CLIENT_ID
+    auth_methods: [oauth, token]
+
+media_folder: "public/uploads"
+public_folder: "/uploads"
+
+collections:
+    - name: pages
+      label: Pages
+      label_singular: Page
+      folder: src/content/pages
+      create: true
+      extension: md
+      format: frontmatter
+      slug: "{{slug}}"
+      summary: "{{title}}"
+      fields:
+          - label: Title
+            name: title
+            widget: string
+          - label: Editable by role(s)
+            name: edit_roles
+            widget: select
+            multiple: true
+            required: false
+            options:
+                - { label: "Editor", value: "editor" }
+            hint: >-
+                Leave empty to allow anyone with repo access to edit this
+                page. Only admins can change this field
+          - label: Content
+            name: body
+            widget: markdown

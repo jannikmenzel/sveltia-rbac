@@ -1,0 +1,71 @@
+---
+import CMS from "@sveltia/cms";
+import {z} from "zod";
+import {collections} from "../content.config";
+
+interface RoleEntry {
+    username: string;
+}
+
+const roleModules = import.meta.glob<{ default: RoleEntry[] }>("../config/roles/*.json", {
+    eager: true,
+});
+const roleUsernameMap = Object.fromEntries(
+    Object.entries(roleModules).flatMap(([path, mod]) => {
+        const role = (path.split("/").pop() ?? path).replace(/\.json$/, "");
+        return mod.default.map((entry) => [entry.username, role]);
+    })
+);
+
+const editableCollections = Object.entries(collections)
+    .filter(([, collection]) => {
+        const {schema} = collection;
+        return schema instanceof z.ZodObject && "edit_roles" in schema.shape;
+    })
+    .map(([name]) => name);
+---
+
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="robots" content="noindex"/>
+    <title>Admin</title>
+</head>
+<body
+        data-role-username-map={JSON.stringify(roleUsernameMap)}
+        data-editable-collections={JSON.stringify(editableCollections)}
+>
+<script is:inline src="/admin/sveltia-cms.js"></script>
+<script is:inline>
+    CMS.registerEventListener({
+        name: "preSave",
+        /** @param {{ entry: any, author: any }} args */
+        handler: ({entry, author}) => {
+            const data = entry.get("data");
+            const collection = entry.get("collection");
+
+            const editableCollections = JSON.parse(
+                document.body.dataset.editableCollections || "[]"
+            );
+            if (!editableCollections.includes(collection)) {
+                return data;
+            }
+
+            const existingRoles = data.get("edit_roles");
+            const hasExplicitRoles = !!existingRoles && existingRoles.size > 0;
+
+            if (entry.get("newRecord") && !hasExplicitRoles) {
+                const roleUsernameMap = JSON.parse(document.body.dataset.roleUsernameMap || "{}");
+                const role = roleUsernameMap[author.login];
+
+                if (role && role !== "admin") {
+                    return data.set("edit_roles", [role]);
+                }
+            }
+
+            return data;
+        },
+    });
+</script>
+</body>
+</html>

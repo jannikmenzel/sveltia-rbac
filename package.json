@@ -1,0 +1,24 @@
+{
+  "name": "sveltia-gitlab-role-based-editing",
+  "description": "Role-based editing for Git-backed CMS (Sveltia/Decap) on self-hosted GitLab, enforced server-side via a pre-receive hook.",
+  "type": "module",
+  "version": "0.0.1",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "postinstall": "cp node_modules/@sveltia/cms/dist/sveltia-cms.js public/admin/"
+  },
+  "dependencies": {
+    "@sveltia/cms": "^0.170.8",
+    "@tailwindcss/typography": "^0.5.20",
+    "@tailwindcss/vite": "^4.3.2",
+    "astro": "^7.1.1",
+    "tailwindcss": "^4.3.2"
+  }
+}

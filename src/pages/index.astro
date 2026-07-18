@@ -1,0 +1,89 @@
+---
+import {getCollection} from "astro:content";
+import "../styles/global.css";
+
+const pages = await getCollection("pages");
+pages.sort((a, b) => a.data.title.localeCompare(b.data.title));
+---
+
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+    <meta name="viewport" content="width=device-width"/>
+    <meta name="generator" content={Astro.generator}/>
+    <title>Role-Based Editing for Sveltia CMS</title>
+</head>
+<body class="mx-auto max-w-2xl px-6 py-10 pb-16 leading-relaxed text-neutral-900">
+<header>
+    <h1 class="text-3xl font-bold">Role-based editing for Sveltia CMS</h1>
+    <p class="mt-3 text-neutral-500">
+        A minimal, working demo: content editors get a normal Git-backed CMS (<a
+            href="https://github.com/sveltia/sveltia-cms" target="_blank" rel="noopener">Sveltia CMS</a>),
+        but which files each role may edit is enforced server-side by a GitLab <strong>pre-receive hook</strong>.
+        A push that violates the rules is rejected by the Git server itself, whether it comes from the CMS, the CLI, or
+        anywhere else.
+    </p>
+    <p class="mt-4">
+        <a class="inline-block rounded-lg bg-neutral-900 px-5 py-2.5 font-semibold text-white no-underline hover:bg-neutral-700"
+           href="/admin/">Open the CMS admin</a>
+    </p>
+</header>
+
+<main class="mt-10">
+    <h2 class="text-2xl font-bold">Demo pages</h2>
+    <p class="mt-2 text-neutral-600">
+        Each page below declares an <code class="rounded bg-neutral-100 px-1.5 py-0.5 text-sm">edit_roles</code> list in
+        its frontmatter. The pre-receive hook on the GitLab server reads that list before accepting a push that touches
+        the file.
+    </p>
+    <ul class="mt-4 flex list-none flex-col gap-2 p-0">
+        {
+            pages.map((page) => (
+                    <li>
+                        <a class="group flex w-full items-center justify-between gap-4 rounded-lg border border-neutral-200 px-4 py-3 no-underline transition-colors hover:border-neutral-300 hover:bg-neutral-50"
+                           href={`/${page.id.replace(/\.md$/, "")}/`}>
+                            <span class="font-semibold text-neutral-900 transition-colors group-hover:text-indigo-600">{page.data.title}</span>
+                            <span class="flex gap-1.5">
+                                    {page.data.edit_roles && page.data.edit_roles.length > 0 ? (
+                                        page.data.edit_roles.map((role) => <em
+                                                class={`rounded-full px-2.5 py-0.5 text-xs not-italic ${role === "admin" ? "bg-red-50 text-red-700" : "bg-indigo-50 text-indigo-600"}`}>{role}</em>)
+                                    ) : (
+                                            <em class="rounded-full bg-green-50 px-2.5 py-0.5 text-xs not-italic text-green-700">anyone</em>
+                                    )}
+                                </span>
+                        </a>
+                    </li>
+            ))
+        }
+    </ul>
+
+    <h2 class="mt-8 text-2xl font-bold">How it works</h2>
+    <ol class="mt-2 list-decimal space-y-1 pl-5 text-neutral-600">
+        <li>
+            <code class="rounded bg-neutral-100 px-1.5 py-0.5 text-sm">src/config/roles/*.json</code> maps GitLab
+            usernames to roles.
+        </li>
+        <li>
+            Content files declare <code class="rounded bg-neutral-100 px-1.5 py-0.5 text-sm">edit_roles</code> in their
+            frontmatter.
+        </li>
+        <li>
+            <code class="rounded bg-neutral-100 px-1.5 py-0.5 text-sm">scripts/pre-receive-hook.sh</code>, installed on
+            the GitLab server, rejects any
+            push that edits a file the pusher's role isn't listed for, changes a file's <code
+                class="rounded bg-neutral-100 px-1.5 py-0.5 text-sm">edit_roles</code> without the <code
+                class="rounded bg-neutral-100 px-1.5 py-0.5 text-sm">admin</code> role, or edits the role files
+            themselves without the <code class="rounded bg-neutral-100 px-1.5 py-0.5 text-sm">admin</code> role.
+        </li>
+    </ol>
+    <p class="mt-4 text-neutral-600">
+        Full setup instructions (including a from-scratch local test server) are in the repository's
+        <a href="https://github.com/jannikmenzel/sveltia-rbac" target="_blank" rel="noopener"
+           class="text-indigo-600 hover:underline">
+            {' '}README
+        </a>.
+    </p>
+</main>
+</body>
+</html>

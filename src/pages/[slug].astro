@@ -1,0 +1,45 @@
+---
+import {getCollection, render} from "astro:content";
+import "../styles/global.css";
+
+export async function getStaticPaths() {
+    const pages = await getCollection("pages");
+    return pages.map((page) => ({
+        params: {slug: page.id.replace(/\.md$/, "")},
+        props: {page},
+    }));
+}
+
+const {page} = Astro.props;
+const {Content} = await render(page);
+const roles = page.data.edit_roles ?? [];
+---
+
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+    <meta name="viewport" content="width=device-width"/>
+    <title>{page.data.title}</title>
+</head>
+<body class="mx-auto max-w-2xl px-6 py-10 pb-16 leading-relaxed text-neutral-900">
+<h1 class="mt-2 text-3xl font-bold">{page.data.title}</h1>
+<div class="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+    <p class="flex items-center gap-1.5 text-sm text-neutral-600">
+        Editable by:
+        <span class="flex gap-1.5">
+            {roles.length > 0 ? roles.map((role: string) => <em
+                    class={`rounded-full px-2.5 py-0.5 text-xs not-italic ${role === "admin" ? "bg-red-50 text-red-700" : "bg-indigo-50 text-indigo-600"}`}>{role}</em>) :
+                    <em class="rounded-full bg-green-50 px-2.5 py-0.5 text-xs not-italic text-green-700">anyone</em>}
+        </span>
+    </p>
+</div>
+<article class="prose prose-neutral mt-6 max-w-none">
+    <Content/>
+</article>
+<a class="mt-5 inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-1.5 text-sm font-medium text-neutral-700 no-underline transition-colors hover:border-neutral-300 hover:bg-neutral-50"
+   href="/">
+    Back to Home
+</a>
+</body>
+</html>

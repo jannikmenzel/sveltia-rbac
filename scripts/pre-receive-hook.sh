@@ -110,12 +110,13 @@ get_edit_roles() {
     get_edit_roles_md "$content"
 }
 
-# Role lookup - scans all JSON files in src/config/roles/ and finds the role
-# that contains the user. Filename (without .json) = role name.
-get_user_role() {
+# Role lookup - scans all JSON files in src/config/roles/ and finds every
+# role the user is a member of (a user can belong to multiple roles).
+# Filename (without .json) = role name. Result as CSV.
+get_user_roles() {
     local ref="$1"
     local username="$2"
-    local role=""
+    local roles=()
     while read -r mode type sha name; do
         [[ -z "$name" ]] && continue
         if git show "${sha}" 2>/dev/null | python3 -c "
@@ -128,31 +129,52 @@ try:
             break
 except: pass
 " 2>/dev/null | grep -q found; then
-            role=$(basename "$name" .json)
-            break
+            roles+=("$(basename "$name" .json)")
         fi
     done < <(git ls-tree -r "${ref}" "${ROLES_DIR}" 2>/dev/null)
-    echo "$role"
+    local IFS=','
+    echo "${roles[*]}"
 }
 
-# Permission check - checks whether the user's role is in the allowed
-# edit_roles list. Admin always has access (self-lockout protection).
+# Checks whether a single role is contained in a comma-separated role list.
+role_in_list() {
+    local role="$1"
+    local list_csv="$2"
+    local r
+    IFS=',' read -ra list <<< "$list_csv"
+    for r in "${list[@]}"; do
+        r="${r// }"
+        [[ "$r" == "$role" ]] && return 0
+    done
+    return 1
+}
+
+# Checks whether two comma-separated role lists share at least one role.
+roles_overlap() {
+    local csv1="$1"
+    local csv2="$2"
+    local r
+    IFS=',' read -ra list1 <<< "$csv1"
+    for r in "${list1[@]}"; do
+        r="${r// }"
+        [[ -n "$r" ]] && role_in_list "$r" "$csv2" && return 0
+    done
+    return 1
+}
+
+# Permission check - checks whether at least one of the user's roles is in
+# the allowed edit_roles list. Admin always has access (self-lockout
+# protection), regardless of what other roles the user has.
 has_permission() {
-    local user_role="$1"
+    local user_roles_csv="$1"
     local edit_roles_csv="$2"
 
-    [[ "$user_role" == "admin" ]] && return 0
+    role_in_list "admin" "$user_roles_csv" && return 0
 
-    [[ "$edit_roles_csv" == "alle" ]] && return 0
     # No edit_roles set -> admin-only, not open to everyone.
     [[ -z "$edit_roles_csv" ]] && return 1
 
-    IFS=',' read -ra roles <<< "$edit_roles_csv"
-    for role in "${roles[@]}"; do
-        role="${role// }"
-        [[ "$role" == "$user_role" ]] && return 0
-    done
-    return 1
+    roles_overlap "$user_roles_csv" "$edit_roles_csv"
 }
 
 # Owner management - reads/writes the file -> role mapping from the
@@ -225,17 +247,17 @@ main() {
         local ref_for_role="$oldrev"
         [[ "$oldrev" == "$ZERO_COMMIT" ]] && ref_for_role="$newrev"
 
-        local user_role
-        user_role=$(get_user_role "$ref_for_role" "$pusher")
+        local user_roles
+        user_roles=$(get_user_roles "$ref_for_role" "$pusher")
 
-        if [[ -z "$user_role" ]]; then
+        if [[ -z "$user_roles" ]]; then
             echo "User '$pusher' has no role in ${ROLES_DIR}"
             exit 1
         fi
 
         # Branch deletion: only admin may delete the main branch itself.
         if [[ "$newrev" == "$ZERO_COMMIT" ]]; then
-            if [[ "$user_role" != "admin" ]]; then
+            if ! role_in_list "admin" "$user_roles"; then
                 echo "Only admins may delete the ${BRANCH} branch"
                 exit 1
             fi
@@ -257,7 +279,7 @@ main() {
 
             # Role config: only admin may change it.
             if [[ "$file" == "$ROLES_DIR"/* ]]; then
-                if [[ "$user_role" != "admin" ]]; then
+                if ! role_in_list "admin" "$user_roles"; then
                     echo "Only admins may change role files"
                     exit 1
                 fi
@@ -273,15 +295,15 @@ main() {
 
                 if [[ "$media_old_exists" == "false" ]]; then
                     OWNER_NEW_PATHS+=("$file")
-                    OWNER_NEW_ROLES+=("$user_role")
+                    OWNER_NEW_ROLES+=("$user_roles")
                     continue
                 fi
 
-                local owner_role
-                owner_role=$(get_owner "$file")
-                if [[ "$user_role" != "admin" && "$owner_role" != "$user_role" ]]; then
+                local owner_roles
+                owner_roles=$(get_owner "$file")
+                if ! role_in_list "admin" "$user_roles" && ! roles_overlap "$user_roles" "$owner_roles"; then
                     echo "Only admin or the uploading role may change/delete '$file'"
-                    echo "Uploaded by role: ${owner_role:-unknown (not tracked, admin only)}"
+                    echo "Uploaded by role(s): ${owner_roles:-unknown (not tracked, admin only)}"
                     exit 1
                 fi
 
@@ -293,7 +315,7 @@ main() {
 
             # Default-deny: everything outside the configured content collections is admin-only.
             if ! is_content_collection "$file"; then
-                if [[ "$user_role" != "admin" ]]; then
+                if ! role_in_list "admin" "$user_roles"; then
                     echo "Only admins may change files outside the configured content collections"
                     echo "File: $file"
                     exit 1
@@ -311,8 +333,8 @@ main() {
                 local new_roles
                 new_roles=$(get_edit_roles "$file" "$newrev")
                 if [[ -n "$new_roles" ]]; then
-                    if ! has_permission "$user_role" "$new_roles"; then
-                        echo "User '$pusher' (role: $user_role) may not create new file '$file'"
+                    if ! has_permission "$user_roles" "$new_roles"; then
+                        echo "User '$pusher' (roles: $user_roles) may not create new file '$file'"
                         echo "Required role(s): $new_roles"
                         exit 1
                     fi
@@ -321,7 +343,7 @@ main() {
                     # role is tracked as owner so that role (+ admin) may
                     # edit/delete the file later.
                     OWNER_NEW_PATHS+=("$file")
-                    OWNER_NEW_ROLES+=("$user_role")
+                    OWNER_NEW_ROLES+=("$user_roles")
                 fi
                 continue
             fi
@@ -340,8 +362,8 @@ main() {
                 [[ -n "$tracked_owner" ]] && effective_old_roles="$tracked_owner"
             fi
 
-            if ! has_permission "$user_role" "$effective_old_roles"; then
-                echo "User '$pusher' (role: $user_role) was not authorized for '$file'"
+            if ! has_permission "$user_roles" "$effective_old_roles"; then
+                echo "User '$pusher' (roles: $user_roles) was not authorized for '$file'"
                 echo "Required role(s): ${effective_old_roles:-admin}"
                 exit 1
             fi
@@ -357,7 +379,7 @@ main() {
             local new_roles
             new_roles=$(get_edit_roles "$file" "$newrev")
             if [[ "$old_roles" != "$new_roles" ]]; then
-                if [[ "$user_role" != "admin" ]]; then
+                if ! role_in_list "admin" "$user_roles"; then
                     echo "Only admins may change a file's permissions"
                     echo "File: $file"
                     exit 1
